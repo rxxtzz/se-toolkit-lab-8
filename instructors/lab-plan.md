@@ -9,6 +9,11 @@
 - Teach the two complementary views of a running system: logs tell you what happened at each service, traces tell you how a request flowed across services.
 - Demonstrate that an AI agent becomes much more useful when it can access operational data — not just application data — through MCP tools.
 
+<!-- sometimes, you can use a debugger. other times - no -->
+<!-- fix a bug in a problematic endpoint (e.g. model field mismatch) -->
+<!-- optional task - improve formatting of messages in clients -->
+<!-- if not enough memory - use swap) -->
+
 ## Learning outcomes
 
 By the end of this lab, students should be able to:
@@ -46,13 +51,16 @@ A senior engineer explains the assignment:
 
 ## Required tasks
 
-### Task 1 — Add Structured Logging
+### Task 1 — Add Structured Logging and Observability MCP Tools
 
 **Purpose:**
 
-Structured logs with consistent fields turn free-text search into precise, filterable queries — and make every other observability tool (traces, agent, alerting) more useful.
+Structured logs with consistent fields turn free-text search into precise, filterable queries.
+Connecting the AI agent to VictoriaLogs and VictoriaTraces lets users ask about errors, request flow, and system health in natural language instead of writing queries by hand.
 
 **Summary:**
+
+#### Part A — Structured logging
 
 Students start by opening the VictoriaLogs web UI (vmui) and looking at the current logs.
 They see unstructured text: Uvicorn startup messages, raw request lines, Python tracebacks.
@@ -95,23 +103,7 @@ Students also add an `auth_failure` event (with `level: "warning"`) for requests
 Students figure out where in the code each log statement belongs — in the webchat channel (`nanobot_webchat`), the MCP tool server (`lms_mcp`), and the backend (middleware, routes, DB layer).
 After redeploying, they trigger both scenarios and verify the full sequences appear in VictoriaLogs.
 
-**Acceptance criteria:**
-
-- Both services emit JSON-structured log entries with at least `level`, `event`, and `service` fields.
-- A successful request produces the happy-path log sequence, queryable in VictoriaLogs.
-- A failed request (database down) produces the error-path log sequence, with `level: "error"` on the DB query event.
-- A request with an invalid API key produces an `auth_failure` event with `level: "warning"`.
-- The student documents a before/after comparison with an example query for each.
-
----
-
-### Task 2 — Add Log Query Tools to the Nanobot Agent
-
-**Purpose:**
-
-Connecting the AI agent to VictoriaLogs lets users ask about errors, request history, and system health in natural language instead of writing LogsQL by hand.
-
-**Summary:**
+#### Part B — Log query tools
 
 Students add MCP tools to the nanobot's MCP server that query the VictoriaLogs HTTP API.
 They implement at least two tools: one that searches logs by keyword and time range (returning recent matching entries), and one that counts errors per service over a time window (returning a summary).
@@ -120,25 +112,9 @@ Each tool constructs a LogsQL query, sends it to the VictoriaLogs query endpoint
 After redeploying the nanobot, students verify the tools work under both normal and failure conditions.
 They ask the agent about errors when the system is healthy (expecting "no errors found" or similar) and after triggering a failure (expecting a summary mentioning the affected service and error).
 
-**Acceptance criteria:**
+#### Part C — Trace query tools
 
-- At least two MCP tools for querying VictoriaLogs are registered in the MCP server.
-- The agent answers "any errors in the last hour?" correctly under normal conditions.
-- The agent answers "any errors in the last hour?" correctly after a failure, mentioning the affected service.
-- The MCP server starts without errors after the changes.
-
----
-
-### Task 3 — Add Trace Query Tools to the Nanobot Agent
-
-**Purpose:**
-
-Connecting the AI agent to VictoriaTraces lets users ask about request flow and performance without navigating the trace UI.
-
-**Summary:**
-
-Students add MCP tools to the nanobot's MCP server that query the VictoriaTraces HTTP API (Jaeger-compatible query endpoints).
-They implement at least two tools: one that lists recent traces for a service (with duration and status), and one that fetches a specific trace by ID (returning the span hierarchy).
+Students implement at least two tools that query the VictoriaTraces HTTP API (Jaeger-compatible query endpoints): one that lists recent traces for a service (with duration and status), and one that fetches a specific trace by ID (returning the span hierarchy).
 Each tool queries the VictoriaTraces API, parses the response, and returns a structured summary.
 
 After redeploying the nanobot, students verify the tools work by asking the agent trace-related questions through the Flutter web app.
@@ -146,6 +122,13 @@ They test fetching recent traces and looking up a specific trace by ID.
 
 **Acceptance criteria:**
 
+- Both services emit JSON-structured log entries with at least `level`, `event`, and `service` fields.
+- A successful request produces the happy-path log sequence, queryable in VictoriaLogs.
+- A failed request (database down) produces the error-path log sequence, with `level: "error"` on the DB query event.
+- A request with an invalid API key produces an `auth_failure` event with `level: "warning"`.
+- At least two MCP tools for querying VictoriaLogs are registered in the MCP server.
+- The agent answers "any errors in the last hour?" correctly under normal conditions.
+- The agent answers "any errors in the last hour?" correctly after a failure, mentioning the affected service.
 - At least two MCP tools for querying VictoriaTraces are registered in the MCP server.
 - The agent answers a question about recent request performance by calling the trace tools.
 - The agent can fetch and summarize a specific trace by ID.
@@ -153,7 +136,7 @@ They test fetching recent traces and looking up a specific trace by ID.
 
 ---
 
-### Task 4 — Write a Skill and Configure a Cron Health Check
+### Task 2 — Write a Skill and Configure a Cron Health Check
 
 **Purpose:**
 
