@@ -199,26 +199,161 @@ Question: "Any errors in the last hour?"
 > | Issue | Count |
 > |-------|-------|
 > | Database connection failures | 5 |
-> 
+>
 > ## Root Cause
-> 
+>
 > All errors show `socket.gaierror: [Errno -2] Name or service not known` when attempting to connect to PostgreSQL. This indicates the database service was unavailable.
-> 
+>
 > ## Recommendation
-> 
+>
 > Check if the PostgreSQL container is running: `docker compose ps postgres`"
 
 ## Task 4A — Multi-step investigation
 
-<!-- Paste the agent's response to "What went wrong?" showing chained log + trace investigation -->
+**Agent's "What went wrong?" response with PostgreSQL stopped:**
+
+The agent performed a one-shot investigation chaining logs and traces:
+
+**Tool calls observed:**
+1. `logs_search(query="/items/", limit=20)` - Search for logs related to the endpoint
+2. `logs_error_count(minutes=60)` - Get error count overview
+3. `traces_list(limit=15)` - List recent traces
+4. `logs_search(query="severity:ERROR", limit=30)` - Find error logs
+5. `lms_health()` - Check LMS backend health
+6. `traces_get(trace_id="aec71d9df5a0ed14d6549cd061795ebb")` - Fetch specific trace
+
+**Agent response:**
+```
+## Issue Found: Database Connection Failure
+
+The `/items/` endpoint is failing due to a **database connectivity issue**.
+
+### Evidence from Logs:
+- Found multiple errors with `severity:ERROR` from the Learning Management Service
+- Error type: `socket.gaierror`
+- Error message: `[Errno -2] Name or service not known`
+- The error occurs during database connection attempts
+
+### Evidence from Traces:
+- Trace ID: `aec71d9df5a0ed14d6549cd061795ebb`
+- Failed span: `SELECT db-lab-8` (database query)
+- The trace shows the request flow: request_started → auth_success → db_query → exception
+
+### Root Cause:
+The backend cannot connect to PostgreSQL because the database container is stopped. 
+The error `Name or service not known` indicates DNS resolution failure for the `postgres` hostname.
+
+### Recommendation:
+1. Check if PostgreSQL is running: `docker compose ps postgres`
+2. If stopped, restart it: `docker compose start postgres`
+3. Verify connectivity after restart
+```
 
 ## Task 4B — Proactive health check
 
-<!-- Screenshot or transcript of the proactive health report that appears in the Flutter chat -->
+**Creating a scheduled health check:**
+
+The agent was asked to create a health check cron job that runs every 2 minutes. The agent used its built-in cron tool to schedule periodic checks that:
+- Run `logs_error_count(minutes=2)` to check for recent errors
+- If errors found, investigate with `logs_search` and `traces_get`
+- Post a summary to the current chat
+
+**Proactive health report (while PostgreSQL was stopped):**
+```
+## Health Check Report
+
+**Status:** ⚠️ Issues Detected
+
+**Time window:** Last 2 minutes
+
+**Errors found:** 3 errors from Learning Management Service
+
+**Root cause:** Database connection failures
+- Error: `socket.gaierror: [Errno -2] Name or service not known`
+- Affected endpoint: `/items/`
+
+**Recommendation:** PostgreSQL container appears to be down. 
+Run `docker compose start postgres` to restore service.
+```
 
 ## Task 4C — Bug fix and recovery
 
-<!-- 1. Root cause identified
-     2. Code fix (diff or description)
-     3. Post-fix response to "What went wrong?" showing the real underlying failure
-     4. Healthy follow-up report or transcript after recovery -->
+### 1. Root Cause — Planted Bug Identified
+
+**Location:** `backend/app/routers/items.py`, `get_items` endpoint
+
+**Bug:** The endpoint caught all exceptions and returned a misleading HTTP 404 "Items not found" error instead of properly propagating database errors as HTTP 500.
+
+```python
+# BUGGY CODE:
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    try:
+        return await read_items(session)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Items not found",
+        ) from exc  # ← Wrong! Database errors become 404s
+```
+
+**Impact:** When PostgreSQL was unavailable, the API returned `{"detail": "Items not found"}` with HTTP 404, masking the real database connectivity issue and making debugging difficult.
+
+### 2. Fix Applied
+
+**Change:** Removed the try-except wrapper that was catching and misrepresenting all exceptions.
+
+```python
+# FIXED CODE:
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    return await read_items(session)  # ← Let exceptions propagate naturally
+```
+
+**Result:** Database errors now properly propagate as HTTP 500 with detailed error information via the global exception handler.
+
+### 3. Post-Fix Failure Check
+
+After the fix, with PostgreSQL stopped, the API now returns the actual error:
+
+```json
+{
+  "detail": "[Errno -2] Name or service not known",
+  "type": "gaierror",
+  "path": "/items/",
+  "traceback": [
+    "  File \"/app/.venv/lib/python3.14/site-packages/asyncpg/connect_utils.py\", line 969, in _create_ssl_connection",
+    "socket.gaierror: [Errno -2] Name or service not known"
+  ]
+}
+```
+
+The agent's "What went wrong?" response now correctly identifies:
+- The actual exception type (`gaierror`)
+- The real error message (`Name or service not known`)
+- The root cause (PostgreSQL unavailable)
+
+### 4. Healthy Follow-Up
+
+After restarting PostgreSQL, the system is healthy:
+
+**Agent health check report:**
+```
+## Health Check Report
+
+**Status:** ✅ Healthy
+
+**Time window:** Last 2 minutes
+
+**Errors found:** 0
+
+The system is operating normally. All endpoints responding with HTTP 200.
+```
+
+**API verification:**
+```bash
+$ curl http://localhost:42001/items/ -H "Authorization: Bearer api-key"
+[{"title":"Lab 01 – Products, Architecture & Roles","id":1,...}, ...]
+```
