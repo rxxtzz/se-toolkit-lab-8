@@ -13,7 +13,11 @@
   },
   "channels": {
     "sendProgress": true,
-    "sendToolHints": false
+    "sendToolHints": false,
+    "webchat": {
+      "enabled": true,
+      "allowFrom": ["*"]
+    }
   },
   "providers": {
     "custom": {
@@ -50,7 +54,7 @@
         "command": "python",
         "args": ["-m", "mcp_lms"],
         "env": {
-          "NANOBOT_LMS_BACKEND_URL": "http://localhost:42002",
+          "NANOBOT_LMS_BACKEND_URL": "http://backend:8000",
           "NANOBOT_LMS_API_KEY": "api-key"
         }
       }
