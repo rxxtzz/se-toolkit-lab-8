@@ -67,11 +67,42 @@ The response included formatted tables showing:
 
 ## Task 2A — Deployed agent
 
-<!-- Paste a short nanobot startup log excerpt showing the gateway started inside Docker -->
+**Nanobot gateway startup log:**
+
+```
+nanobot-1  | Resolved config written to /app/nanobot/config.resolved.json
+nanobot-1  | Using config: /app/nanobot/config.resolved.json
+nanobot-1  | 🐈 Starting nanobot gateway version 0.1.4.post5 on port 18790...
+nanobot-1  | 2026-03-27 10:57:34.846 | INFO     | nanobot.channels.manager:_init_channels:54 - WebChat enabled
+nanobot-1  | ✓ Channels enabled: webchat
+nanobot-1  | ✓ Heartbeat: every 1800s
+nanobot-1  | 2026-03-27 10:57:35.199 | INFO     | nanobot_webchat.channel:start:72 - Web Chat starting on 0.0.0.0:8765
+nanobot-1  | 2026-03-27 10:57:36.701 | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:162 - MCP: registered tool 'mcp_lms_lms_health' from server 'lms'
+nanobot-1  | 2026-03-27 10:57:36.702 | INFO     | nanobot.agent.tools.mcp:connect_mcp_servers:182 - MCP server 'lms': connected, 9 tools registered
+nanobot-1  | 2026-03-27 10:57:36.702 | INFO     | nanobot.agent.loop:run:260 - Agent loop started
+```
+
+The gateway started successfully with:
+- WebChat channel enabled on port 8765
+- MCP server 'lms' connected with 9 tools registered (lms_health, lms_labs, lms_learners, lms_pass_rates, lms_timeline, lms_groups, lms_top_learners, lms_completion_rate, lms_sync_pipeline)
+- Agent loop running
 
 ## Task 2B — Web client
 
-<!-- Screenshot of a conversation with the agent in the Flutter web app -->
+**WebSocket endpoint test:**
+
+The WebSocket endpoint at `ws://localhost:42002/ws/chat?access_key=vywYrALy228` is working. Logs show successful connections and message processing:
+
+```
+nanobot-1  | 2026-03-27 10:59:16.293 | INFO     | nanobot_webchat.channel:_handle_ws:120 - WebChat: new connection chat_id=5e2a16d3-0ce0-4129-9b79-2f7ecf9ac6e0
+nanobot-1  | 2026-03-27 10:59:16.294 | INFO     | nanobot.agent.loop:_process_message:385 - Processing message from webchat:5e2a16d3-0ce0-4129-9b79-2f7ecf9ac6e0: What labs are available?
+nanobot-1  | 2026-03-27 10:59:20.880 | INFO     | nanobot.agent.loop:_run_agent_loop:227 - Tool call: mcp_lms_lms_labs({})
+nanobot-1  | 2026-03-27 10:59:26.933 | INFO     | nanobot.agent.loop:_process_message:452 - Response to webchat:5e2a16d3-0ce0-4129-9b79-2f7ecf9ac6e0: Here are the available labs:
+```
+
+**Flutter web client:**
+
+Accessible at http://localhost:42002/flutter/ - the login screen loads correctly and accepts the NANOBOT_ACCESS_KEY for authentication.
 
 ## Task 3A — Structured logging
 
