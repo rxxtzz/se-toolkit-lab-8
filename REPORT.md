@@ -106,15 +106,107 @@ Accessible at http://localhost:42002/flutter/ - the login screen loads correctly
 
 ## Task 3A — Structured logging
 
-<!-- Paste happy-path and error-path log excerpts, VictoriaLogs query screenshot -->
+**Happy-path log excerpt (request with status 200):**
+
+```
+backend-1  | 2026-03-27 10:59:21,080 INFO [app.main] [main.py:60] [trace_id=7b154507c5bedf53486b8e1d8425f5ed span_id=5265698f06be365f resource.service.name=Learning Management Service trace_sampled=True] - request_started
+backend-1  | 2026-03-27 10:59:21,184 INFO [app.auth] [auth.py:30] [trace_id=7b154507c5bedf53486b8e1d8425f5ed span_id=5265698f06be365f resource.service.name=Learning Management Service trace_sampled=True] - auth_success
+backend-1  | 2026-03-27 10:59:21,211 INFO [app.db.items] [items.py:16] [trace_id=7b154507c5bedf53486b8e1d8425f5ed span_id=5265698f06be365f resource.service.name=Learning Management Service trace_sampled=True] - db_query
+backend-1  | 2026-03-27 10:59:21,444 INFO [app.main] [main.py:68] [trace_id=7b154507c5bedf53486b8e1d8425f5ed span_id=5265698f06be365f resource.service.name=Learning Management Service trace_sampled=True] - request_completed
+backend-1  | INFO:     172.20.0.9:34792 - "GET /items/ HTTP/1.1" 200
+```
+
+The log shows the full request lifecycle: `request_started` → `auth_success` → `db_query` → `request_completed` with HTTP 200.
+
+**Error-path log excerpt (PostgreSQL stopped):**
+
+```
+backend-1  | 2026-03-27 11:07:39,569 INFO [app.main] [main.py:60] [trace_id=7a15eadb050ff638f411f4d49630a098 span_id=c89319b2d4661c3b resource.service.name=Learning Management Service trace_sampled=True] - request_started
+backend-1  | 2026-03-27 11:07:39,570 INFO [app.auth] [auth.py:30] [trace_id=7a15eadb050ff638f411f4d49630a098 span_id=c89319b2d4661c3b resource.service.name=Learning Management Service trace_sampled=True] - auth_success
+backend-1  | 2026-03-27 11:07:39,571 INFO [app.db.items] [items.py:16] [trace_id=7a15eadb050ff638f411f4d49630a098 span_id=c89319b2d4661c3b resource.service.name=Learning Management Service trace_sampled=True] - db_query
+backend-1  | 2026-03-27 11:07:39,616 ERROR [app.db.items] [items.py:20] [trace_id=7a15eadb050ff638f411f4d49630a098 span_id=c89319b2d4661c3b resource.service.name=Learning Management Service trace_sampled=True] - db_query
+backend-1  |   ... socket.gaierror: [Errno -2] Name or service not known
+backend-1  | 2026-03-27 11:07:39,617 INFO [app.main] [main.py:68] [trace_id=7a15eadb050ff638f411f4d49630a098 span_id=c89319b2d4661c3b resource.service.name=Learning Management Service trace_sampled=True] - request_completed
+backend-1  | INFO:     172.20.0.1:51618 - "GET /items/ HTTP/1.1" 404
+```
+
+The error log shows `db_query` with `ERROR` level and the exception `socket.gaierror: [Errno -2] Name or service not known` when PostgreSQL was unavailable.
+
+**VictoriaLogs query:**
+
+Query: `severity:ERROR`
+
+Result shows structured JSON logs with fields like:
+- `_msg`: "db_query"
+- `severity`: "ERROR"
+- `error`: "[Errno -2] Name or service not known"
+- `event`: "db_query"
+- `trace_id`: "7a15eadb050ff638f411f4d49630a098"
 
 ## Task 3B — Traces
 
-<!-- Screenshots: healthy trace span hierarchy, error trace -->
+**Healthy trace span hierarchy:**
+
+A healthy trace shows the following span structure:
+1. `GET /items/` (server span, duration: ~7ms, status: 200)
+   - `connect` (database connection, ~106μs)
+   - `SELECT db-lab-8` (database query, ~1.8ms)
+   - `BEGIN;` (transaction start, ~294μs)
+   - `GET /items/ http send` (response, ~32μs, status: 200)
+
+**Error trace:**
+
+When PostgreSQL was stopped, the error trace shows:
+1. `GET /items/` (server span, duration: ~44ms, status: 404)
+   - `connect` (database connection attempt, ~126μs)
+   - `SELECT db-lab-8` (database query, ~23ms) - **ERROR: "connection is closed"**
+   - Exception log with full stack trace: `socket.gaierror: [Errno -2] Name or service not known`
+
+The error appears in the `SELECT db-lab-8` span with `error: true` tag and exception details in the span logs.
 
 ## Task 3C — Observability MCP tools
 
-<!-- Paste agent responses to "any errors in the last hour?" under normal and failure conditions -->
+**New MCP tools implemented:**
+
+| Tool | Description |
+|------|-------------|
+| `logs_search` | Search logs using LogsQL query |
+| `logs_error_count` | Count errors per service over a time window |
+| `traces_list` | List recent traces |
+| `traces_get` | Fetch a specific trace by ID |
+| `traces_services` | List all services with traces |
+
+**Agent response under normal conditions:**
+
+Question: "Any errors in the last hour?"
+
+> "Yes, there are **4 errors** in the last hour, all from the **Learning Management Service**:
+> 
+> | Time | Error Type | Details |
+> |------|------------|---------|
+> | ... | db_query | [Errno -2] Name or service not known |
+> 
+> These errors occurred when the database connection failed. The system has since recovered."
+
+**Agent response under failure conditions (PostgreSQL stopped):**
+
+Question: "Any errors in the last hour?"
+
+> "Yes, there are **5 errors** in the last hour, all from the **Learning Management Service**.
+> 
+> ## Error Summary
+> 
+> | Issue | Count |
+> |-------|-------|
+> | Database connection failures | 5 |
+> 
+> ## Root Cause
+> 
+> All errors show `socket.gaierror: [Errno -2] Name or service not known` when attempting to connect to PostgreSQL. This indicates the database service was unavailable.
+> 
+> ## Recommendation
+> 
+> Check if the PostgreSQL container is running: `docker compose ps postgres`"
 
 ## Task 4A — Multi-step investigation
 
